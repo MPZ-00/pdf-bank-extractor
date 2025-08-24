@@ -45,6 +45,11 @@ python main.py -f statement.pdf -o my_transactions.csv
 python main.py -d /path/to/pdfs --add-filename
 ```
 
+### Check version
+```bash
+python main.py --version
+```
+
 ## Command Line Options
 
 - `-f, --file`: Process a single PDF file

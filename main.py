@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""PDF Bank Statement Extractor
+
+A Python utility to extract transaction data from German bank statement PDFs.
+"""
 import argparse
 import csv
 import re
@@ -6,6 +10,9 @@ import sys
 from pathlib import Path
 
 import pdfplumber
+
+__version__ = "0.1.0"
+__author__ = "MPZ-00"
 
 DATE_RE   = re.compile(r"^(\d{2}\.\d{2}\.\d{4})")
 AMOUNT_RE = re.compile(r"[-+]?\d{1,3}(?:\.\d{3})*,\d{2}")
@@ -114,7 +121,8 @@ def collect_files(file: Path | None, folder: Path | None):
 
 def main():
     p = argparse.ArgumentParser(
-        description="Extracts date and amount from bank statement PDFs into a CSV."
+        description="Extracts date and amount from bank statement PDFs into a CSV.",
+        epilog=f"PDF Bank Statement Extractor v{__version__} by {__author__}"
     )
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("-f", "--file", type=Path, help="Single PDF file")
@@ -123,6 +131,7 @@ def main():
                    help="Output CSV path, default: auszuege.csv")
     p.add_argument("--add-filename", action="store_true",
                    help="Include filename in output")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     args = p.parse_args()
     

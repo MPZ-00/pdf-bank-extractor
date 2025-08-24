@@ -77,6 +77,16 @@ This will:
 2. Include filenames in the output
 3. Save results to `transactions_2024.csv`
 
+## TODO
+
+- [ ] Add configuration file support for customizable regex patterns
+- [ ] Implement comprehensive testing suite
+- [ ] Extend regex patterns to support more bank formats
+- [ ] Add support for different date formats
+- [ ] Improve PDF text extraction for complex layouts
+
 ## License
 
-This project is provided as-is for educational and personal use.
+MIT License - see [LICENSE](LICENSE) file for details.
+
+This project is provided "as-is" without warranty of any kind.

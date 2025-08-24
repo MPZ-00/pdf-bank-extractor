@@ -9,7 +9,16 @@ if [ -d "dist" ]; then
     rm -rf dist build
 fi
 
-# Install dependencies if needed
+# Create and activate virtual environment if it doesn't exist
+if [ ! -d "venv" ]; then
+    echo "Creating virtual environment..."
+    python -m venv venv
+fi
+
+echo "Activating virtual environment..."
+source venv/bin/activate
+
+# Install dependencies
 echo "Installing dependencies..."
 pip install -r requirements.txt
 
@@ -32,6 +41,7 @@ if [ $? -eq 0 ]; then
     fi
     
     echo "Build complete with hash verification!"
+    echo "Remember to deactivate the virtual environment when done: deactivate"
 else
     echo "Build failed!"
     exit 1

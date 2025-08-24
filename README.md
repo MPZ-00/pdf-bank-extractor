@@ -17,13 +17,34 @@ A Python utility to extract transaction data (dates and amounts) from bank state
 
 ## Installation
 
-1. Clone or download this repository
-2. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### Option 1: Using Virtual Environment (Recommended)
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Option 2: Global Installation
+
+```bash
+# Install dependencies globally
+pip install -r requirements.txt
+```
+
+**Note:** Using a virtual environment is recommended to avoid conflicts with other Python projects.
 
 ## Usage
+
+**Note:** If using a virtual environment, make sure it's activated before running commands.
 
 ### Extract from a single PDF file
 ```bash
@@ -111,16 +132,37 @@ chmod +x pdf-bank-extractor-linux-x64
 
 ### Build Executable
 
-```bash
-# Install PyInstaller
-pip install pyinstaller
+The build scripts automatically create and manage a virtual environment for you:
 
-# Build (cross-platform script)
+```bash
+# Windows
+build.bat
+
+# Linux/macOS
 chmod +x build.sh
 ./build.sh
+```
 
-# Or on Windows
-build.bat
+**Manual build process:**
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Build executable
+pyinstaller --onefile --name pdf-bank-extractor --clean main.py
+
+# Deactivate when done
+deactivate
 ```
 
 This creates a single executable file in the `dist/` directory with SHA256 hash verification.

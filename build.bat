@@ -10,7 +10,16 @@ if exist "dist" (
     rmdir /s /q build
 )
 
-REM Install dependencies if needed
+REM Create and activate virtual environment if it doesn't exist
+if not exist "venv" (
+    echo Creating virtual environment...
+    python -m venv venv
+)
+
+echo Activating virtual environment...
+call venv\Scripts\activate
+
+REM Install dependencies
 echo Installing dependencies...
 pip install -r requirements.txt
 
@@ -27,6 +36,7 @@ if %errorlevel% == 0 (
     powershell -Command "Get-FileHash -Path 'dist\pdf-bank-extractor.exe' -Algorithm SHA256 | Select-Object -ExpandProperty Hash" > dist\pdf-bank-extractor.exe.sha256
     
     echo Build complete with hash verification!
+    echo Remember to deactivate the virtual environment when done: deactivate
 ) else (
     echo Build failed!
     exit /b 1

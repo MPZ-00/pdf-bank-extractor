@@ -1,1 +1,2 @@
 pdfplumber>=0.7.0
+pyinstaller>=5.0.0

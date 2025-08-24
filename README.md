@@ -82,6 +82,49 @@ This will:
 2. Include filenames in the output
 3. Save results to `transactions_2024.csv`
 
+## Binary Releases
+
+Pre-built executables are available for download from the [Releases](https://github.com/MPZ-00/pdf-bank-extractor/releases) page:
+
+- **Windows**: `pdf-bank-extractor-windows-x64.exe`
+- **Linux**: `pdf-bank-extractor-linux-x64`
+- **macOS**: `pdf-bank-extractor-macos-x64`
+
+Each release includes SHA256 hash files for integrity verification.
+
+### Using Pre-built Executables
+
+```bash
+# Windows
+.\pdf-bank-extractor-windows-x64.exe -f statement.pdf
+
+# Linux/macOS (make executable first)
+chmod +x pdf-bank-extractor-linux-x64
+./pdf-bank-extractor-linux-x64 -f statement.pdf
+```
+
+## Building from Source
+
+### Prerequisites
+- Python 3.7+
+- pip
+
+### Build Executable
+
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Build (cross-platform script)
+chmod +x build.sh
+./build.sh
+
+# Or on Windows
+build.bat
+```
+
+This creates a single executable file in the `dist/` directory with SHA256 hash verification.
+
 ## TODO
 
 - [ ] Add configuration file support for customizable regex patterns

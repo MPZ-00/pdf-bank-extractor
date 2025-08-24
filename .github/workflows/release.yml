@@ -1,0 +1,175 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v0.1.0, v1.0.0, etc.
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            artifact_name: pdf-bank-extractor-windows.exe
+            asset_name: pdf-bank-extractor-windows-x64.exe
+          - os: ubuntu-latest
+            name: Linux
+            artifact_name: pdf-bank-extractor-linux
+            asset_name: pdf-bank-extractor-linux-x64
+          - os: macos-latest
+            name: macOS
+            artifact_name: pdf-bank-extractor-macos
+            asset_name: pdf-bank-extractor-macos-x64
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build executable
+      run: |
+        pyinstaller --onefile --name ${{ matrix.artifact_name }} --clean main.py
+
+    - name: Generate file hash (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        $hash = Get-FileHash -Path "dist/${{ matrix.artifact_name }}" -Algorithm SHA256
+        $hash.Hash | Out-File -FilePath "dist/${{ matrix.artifact_name }}.sha256"
+        echo "SHA256: $($hash.Hash)" | Out-File -FilePath "dist/${{ matrix.artifact_name }}.txt"
+
+    - name: Generate file hash (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        sha256sum dist/${{ matrix.artifact_name }} > dist/${{ matrix.artifact_name }}.sha256
+        echo "SHA256: $(sha256sum dist/${{ matrix.artifact_name }} | cut -d' ' -f1)" > dist/${{ matrix.artifact_name }}.txt
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.asset_name }}
+        path: |
+          dist/${{ matrix.artifact_name }}
+          dist/${{ matrix.artifact_name }}.sha256
+          dist/${{ matrix.artifact_name }}.txt
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body: |
+          ## PDF Bank Statement Extractor ${{ github.ref }}
+          
+          ### Features
+          - Extract transaction dates and amounts from German bank statement PDFs
+          - Export to CSV format with customizable options
+          - Batch processing support
+          - Robust error handling
+          
+          ### Downloads
+          Choose the appropriate executable for your platform:
+          - **Windows**: `pdf-bank-extractor-windows-x64.exe`
+          - **Linux**: `pdf-bank-extractor-linux-x64`
+          - **macOS**: `pdf-bank-extractor-macos-x64`
+          
+          ### File Verification
+          Each executable includes SHA256 hash files for integrity verification.
+          
+          ### Usage
+          ```bash
+          # Extract from single PDF
+          ./pdf-bank-extractor-[platform] -f statement.pdf
+          
+          # Extract from directory
+          ./pdf-bank-extractor-[platform] -d /path/to/pdfs
+          ```
+          
+          For more options, run with `--help`.
+        draft: false
+        prerelease: false
+
+    - name: Upload Windows Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./pdf-bank-extractor-windows-x64.exe/pdf-bank-extractor-windows.exe
+        asset_name: pdf-bank-extractor-windows-x64.exe
+        asset_content_type: application/octet-stream
+
+    - name: Upload Windows Hash
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./pdf-bank-extractor-windows-x64.exe/pdf-bank-extractor-windows.exe.sha256
+        asset_name: pdf-bank-extractor-windows-x64.exe.sha256
+        asset_content_type: text/plain
+
+    - name: Upload Linux Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./pdf-bank-extractor-linux-x64/pdf-bank-extractor-linux
+        asset_name: pdf-bank-extractor-linux-x64
+        asset_content_type: application/octet-stream
+
+    - name: Upload Linux Hash
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./pdf-bank-extractor-linux-x64/pdf-bank-extractor-linux.sha256
+        asset_name: pdf-bank-extractor-linux-x64.sha256
+        asset_content_type: text/plain
+
+    - name: Upload macOS Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./pdf-bank-extractor-macos-x64/pdf-bank-extractor-macos
+        asset_name: pdf-bank-extractor-macos-x64
+        asset_content_type: application/octet-stream
+
+    - name: Upload macOS Hash
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./pdf-bank-extractor-macos-x64/pdf-bank-extractor-macos.sha256
+        asset_name: pdf-bank-extractor-macos-x64.sha256
+        asset_content_type: text/plain

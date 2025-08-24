@@ -8,14 +8,21 @@ import pdfplumber
 
 DATE_RE   = re.compile(r"^(\d{2}\.\d{2}\.\d{4})")
 AMOUNT_RE = re.compile(r"[-+]?\d{1,3}(?:\.\d{3})*,\d{2}")
+STOP_RE = re.compile(r"(Zinsertrag|Neuer Saldo)")
 
 def extract_from_pdf(pdf_path: Path):
     rows = []
+    stop = False
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
+            if stop:
+                break
             text = page.extract_text() or ""
             for line in text.splitlines():
                 line = line.strip()
+                if STOP_RE.search(line):
+                    stop = True
+                    break
                 m_date = DATE_RE.match(line)
                 m_amount = AMOUNT_RE.search(line)
                 if m_date and m_amount:
@@ -33,21 +40,20 @@ def collect_files(file: Path | None, folder: Path | None):
 
 def main():
     p = argparse.ArgumentParser(
-        description="Extrahiert Datum und Betrag aus Kontoauszug-PDFs in eine CSV."
+        description="Extracts date and amount from bank statement PDFs into a CSV."
     )
     src = p.add_mutually_exclusive_group(required=True)
-    src.add_argument("-f", "--file", type=Path, help="Einzelne PDF-Datei")
-    src.add_argument("-d", "--dir",  type=Path, help="Ordner mit PDFs, rekursiv")
+    src.add_argument("-f", "--file", type=Path, help="Single PDF file")
+    src.add_argument("-d", "--dir",  type=Path, help="Folder with PDFs, recursive")
     p.add_argument("-o", "--out", type=Path, default=Path("auszuege.csv"),
-                   help="Pfad zur Ausgabe-CSV, Standard: auszuege.csv")
+                   help="Output CSV path, default: auszuege.csv")
     p.add_argument("--add-filename", action="store_true",
-                   help="Dateiname als zusätzliche Spalte ausgeben")
+                   help="Include filename in output")
 
     args = p.parse_args()
-
     files = collect_files(args.file, args.dir)
     if not files:
-        raise SystemExit("Keine PDF-Dateien gefunden.")
+        raise SystemExit("No PDF files found.")
 
     out_fields = ["Datum", "Betrag"]
     if args.add_filename:
@@ -67,7 +73,7 @@ def main():
                     writer.writerow([d, a])
                 total += 1
 
-    print(f"Fertig. {total} Buchungen aus {len(files)} Datei(en) → {args.out}")
+    print(f"Done. {total} transactions from {len(files)} file(s) → {args.out}")
 
 if __name__ == "__main__":
     main()

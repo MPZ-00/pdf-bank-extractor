@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: 'v0.1.0'
+
 
 jobs:
   build:
@@ -51,7 +58,7 @@ jobs:
             echo "SHA256: $(cat dist/${{ matrix.artifact_name }}.sha256)" > dist/${{ matrix.artifact_name }}.txt
           fi
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
           path: |
@@ -65,7 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
 
@@ -73,7 +80,7 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
           name: Release ${{ github.ref_name }}
           body: |
             ## PDF Bank Statement Extractor ${{ github.ref_name }}

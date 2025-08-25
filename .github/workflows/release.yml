@@ -48,15 +48,21 @@ jobs:
         run: |
           pyinstaller --onefile --name "${{ matrix.artifact_name }}" --clean main.py
 
-      - name: Generate file hash
+      - name: Generate file hash (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
         run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            powershell -Command "Get-FileHash -Path dist/${{ matrix.artifact_name }} -Algorithm SHA256 | Format-Table -HideTableHeaders | ForEach-Object { $_.Hash } | Out-File -Encoding ascii -NoNewline dist/${{ matrix.artifact_name }}.sha256"
-            powershell -Command "\"SHA256: \" + (Get-Content dist/${{ matrix.artifact_name }}.sha256) | Out-File -Encoding ascii -NoNewline dist/${{ matrix.artifact_name }}.txt"
-          else
+            $hash = Get-FileHash -Path "dist/${{ matrix.artifact_name }}" -Algorithm SHA256
+            $hash.Hash | Out-File -Encoding ascii -NoNewline "dist/${{ matrix.artifact_name }}.sha256"
+            "SHA256: $($hash.Hash)" | Out-File -Encoding ascii -NoNewline "dist/${{ matrix.artifact_name }}.txt"
+
+      - name: Generate file hash (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
             sha256sum dist/${{ matrix.artifact_name }} | cut -d ' ' -f1 > dist/${{ matrix.artifact_name }}.sha256
             echo "SHA256: $(cat dist/${{ matrix.artifact_name }}.sha256)" > dist/${{ matrix.artifact_name }}.txt
-          fi
+
 
       - uses: actions/upload-artifact@v4
         with:

@@ -22,6 +22,7 @@ AMOUNT_RE = re.compile(r"[-+]?\d{1,3}(?:\.\d{3})*,\d{2}\s*€?")
 STOP_RE = re.compile(r"(Zinsertrag|Neuer Saldo)")
 IBAN_RE = re.compile(r"[A-Z]{2}\d{18}")
 BIC_RE = re.compile(r"[A-Z]{8,11}")
+TRANSACTION_TYPE_RE = re.compile(r"(Lastschrift|Überweisung|Gutschrift|Belastung|Dauerauftrag)", re.IGNORECASE)
 
 def extract_from_pdf(pdf_path: Path):
     """Extract full table data from a PDF file.
@@ -59,13 +60,13 @@ def extract_from_pdf(pdf_path: Path):
                 if tables:
                     for table in tables:
                         for row in table:
-                            if row and len(row) >= 5:  # At least 5 columns expected
+                            if row and len(row) >= 4:  # At least 4 columns expected (corrected structure)
                                 # Check if this is a data row (has date and amount)
                                 row_text = " ".join(str(cell) if cell else "" for cell in row)
                                 if DATE_RE.search(row_text) and AMOUNT_RE.search(row_text):
                                     # Clean and format the row
                                     clean_row = []
-                                    for cell in row[:6]:  # Take first 6 columns
+                                    for cell in row[:5]:  # Take first 5 columns (corrected structure)
                                         clean_row.append(str(cell).strip() if cell else "")
                                     page_rows.append(clean_row)
                 
@@ -78,44 +79,67 @@ def extract_from_pdf(pdf_path: Path):
                         continue
                     
                     lines = text.splitlines()
+                    current_transaction = None
+                    
                     for i, line in enumerate(lines):
                         line = line.strip()
                         if STOP_RE.search(line):
                             break
-                            
-                        # Look for lines that contain dates and amounts
+                        
+                        # Check if this line starts a new transaction (has date and amount)
                         if DATE_RE.search(line) and AMOUNT_RE.search(line):
-                            # Try to parse the transaction line
-                            parts = line.split()
-                            if len(parts) >= 4:
-                                # Extract date (first date found)
-                                date_match = DATE_RE.search(line)
-                                date = date_match.group() if date_match else ""
-                                
-                                # Extract amount (last amount found)
-                                amount_matches = list(AMOUNT_RE.finditer(line))
-                                amount = amount_matches[-1].group() if amount_matches else ""
-                                
-                                # Try to extract other fields
-                                # This is a simplified approach - might need refinement
-                                remaining_text = line
-                                for pattern in [date, amount]:
-                                    if pattern:
-                                        remaining_text = remaining_text.replace(pattern, "", 1)
-                                
-                                # Split remaining text into potential fields
-                                fields = [f.strip() for f in remaining_text.split() if f.strip()]
-                                
-                                # Build row: Date/Valuta, Vorgang, Referenz, Auftraggeber/IBAN, Buchungstext, Amount
-                                row = [
-                                    date,  # Buchungstag/Valuta
-                                    fields[0] if len(fields) > 0 else "",  # Vorgang
-                                    fields[1] if len(fields) > 1 else "",  # Referenz
-                                    " ".join(fields[2:-1]) if len(fields) > 3 else "",  # Auftraggeber/Empfänger,IBAN/BIC
-                                    fields[-1] if len(fields) > 0 and len(fields) > 2 else "",  # Buchungstext
-                                    amount  # Ausgang/Eingang
-                                ]
-                                page_rows.append(row)
+                            # Save previous transaction if exists
+                            if current_transaction:
+                                page_rows.append(current_transaction)
+                            
+                            # Start new transaction
+                            date_match = DATE_RE.search(line)
+                            date = date_match.group() if date_match else ""
+                            
+                            # Extract amount (last amount found)
+                            amount_matches = list(AMOUNT_RE.finditer(line))
+                            amount = amount_matches[-1].group() if amount_matches else ""
+                            
+                            # Extract transaction type (Vorgang Referenz combined)
+                            vorgang_referenz = ""
+                            transaction_type_match = TRANSACTION_TYPE_RE.search(line)
+                            if transaction_type_match:
+                                # Find the full transaction type description
+                                type_start = transaction_type_match.start()
+                                # Look for the part between transaction type and amount
+                                amount_start = amount_matches[-1].start() if amount_matches else len(line)
+                                vorgang_referenz = line[type_start:amount_start].strip()
+                            
+                            # Try to extract sender/recipient info
+                            auftraggeber = ""
+                            remaining_text = line
+                            # Remove already extracted parts
+                            for pattern in [date, amount, vorgang_referenz]:
+                                if pattern:
+                                    remaining_text = remaining_text.replace(pattern, "", 1)
+                            
+                            # Clean up remaining text for sender info
+                            auftraggeber = remaining_text.strip()
+                            
+                            current_transaction = [
+                                date,  # Buchungstag/Valuta
+                                vorgang_referenz,  # Vorgang Referenz (combined)
+                                auftraggeber,  # Auftraggeber/Empfänger,IBAN/BIC
+                                "",  # Buchungstext (will be filled from next lines)
+                                amount  # Ausgang/Eingang
+                            ]
+                            
+                        elif current_transaction and line:
+                            # This might be additional buchungstext for the current transaction
+                            # Append to buchungstext field (index 3)
+                            if current_transaction[3]:
+                                current_transaction[3] += " " + line
+                            else:
+                                current_transaction[3] = line
+                    
+                    # Don't forget the last transaction
+                    if current_transaction:
+                        page_rows.append(current_transaction)
                 
                 # Add all rows from this page to the total
                 rows.extend(page_rows)
@@ -212,9 +236,9 @@ def main():
             print(f"Error: Cannot create output directory: {output_dir}", file=sys.stderr)
             sys.exit(1)
     
-    # Column headers matching Demo.md structure
+    # Column headers matching corrected structure
     out_fields = [
-        "Buchungstag/Valuta", "Vorgang", "Referenz", 
+        "Buchungstag/Valuta", "Vorgang Referenz", 
         "Auftraggeber/Empfänger,IBAN/BIC", "Buchungstext", "Ausgang/Eingang"
     ]
     if args.add_filename:
@@ -237,11 +261,11 @@ def main():
                         continue
                         
                     for row in rows:
-                        # Ensure we have 6 columns
-                        while len(row) < 6:
+                        # Ensure we have 5 columns (corrected structure)
+                        while len(row) < 5:
                             row.append("")
                         
-                        out_row = row[:6]  # Take first 6 columns
+                        out_row = row[:5]  # Take first 5 columns
                         if args.add_filename:
                             out_row.append(str(pdf))
                         

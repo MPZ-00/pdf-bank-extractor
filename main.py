@@ -52,6 +52,8 @@ def extract_from_pdf(pdf_path: Path):
                 return rows
                 
             for page in pdf.pages:
+                page_rows = []
+                
                 # First try to extract tables directly
                 tables = page.extract_tables()
                 if tables:
@@ -65,10 +67,10 @@ def extract_from_pdf(pdf_path: Path):
                                     clean_row = []
                                     for cell in row[:6]:  # Take first 6 columns
                                         clean_row.append(str(cell).strip() if cell else "")
-                                    rows.append(clean_row)
+                                    page_rows.append(clean_row)
                 
-                # Fallback: extract from text if no tables found
-                if not rows:
+                # Fallback: extract from text if no tables found on this page
+                if not page_rows:
                     try:
                         text = page.extract_text() or ""
                     except Exception as e:
@@ -113,7 +115,10 @@ def extract_from_pdf(pdf_path: Path):
                                     fields[-1] if len(fields) > 0 and len(fields) > 2 else "",  # Buchungstext
                                     amount  # Ausgang/Eingang
                                 ]
-                                rows.append(row)
+                                page_rows.append(row)
+                
+                # Add all rows from this page to the total
+                rows.extend(page_rows)
                         
     except PermissionError:
         raise PermissionError(f"Permission denied accessing PDF file: {pdf_path}")

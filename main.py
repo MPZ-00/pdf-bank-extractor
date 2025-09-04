@@ -7,6 +7,7 @@ import argparse
 import csv
 import re
 import sys
+import io
 from pathlib import Path
 
 import pdfplumber
@@ -14,18 +15,22 @@ import pdfplumber
 __version__ = "0.1.0"
 __author__ = "MPZ-00"
 
-DATE_RE   = re.compile(r"^(\d{2}\.\d{2}\.\d{4})")
-AMOUNT_RE = re.compile(r"[-+]?\d{1,3}(?:\.\d{3})*,\d{2}")
+# Regex patterns for table extraction
+HEADER_RE = re.compile(r"(Buchungstag|Valuta|Vorgang|Referenz|Auftraggeber|Empfänger|IBAN|BIC|Buchungstext|Ausgang|Eingang)", re.IGNORECASE)
+DATE_RE = re.compile(r"\d{2}\.\d{2}\.\d{4}")
+AMOUNT_RE = re.compile(r"[-+]?\d{1,3}(?:\.\d{3})*,\d{2}\s*€?")
 STOP_RE = re.compile(r"(Zinsertrag|Neuer Saldo)")
+IBAN_RE = re.compile(r"[A-Z]{2}\d{18}")
+BIC_RE = re.compile(r"[A-Z]{8,11}")
 
 def extract_from_pdf(pdf_path: Path):
-    """Extract date and amount pairs from a PDF file.
+    """Extract full table data from a PDF file.
     
     Args:
         pdf_path: Path to the PDF file
         
     Returns:
-        List of (date, amount) tuples
+        List of transaction rows with all columns
         
     Raises:
         FileNotFoundError: If PDF file doesn't exist
@@ -39,7 +44,6 @@ def extract_from_pdf(pdf_path: Path):
         raise ValueError(f"Path is not a file: {pdf_path}")
     
     rows = []
-    stop = False
     
     try:
         with pdfplumber.open(pdf_path) as pdf:
@@ -48,24 +52,68 @@ def extract_from_pdf(pdf_path: Path):
                 return rows
                 
             for page in pdf.pages:
-                if stop:
-                    break
+                # First try to extract tables directly
+                tables = page.extract_tables()
+                if tables:
+                    for table in tables:
+                        for row in table:
+                            if row and len(row) >= 5:  # At least 5 columns expected
+                                # Check if this is a data row (has date and amount)
+                                row_text = " ".join(str(cell) if cell else "" for cell in row)
+                                if DATE_RE.search(row_text) and AMOUNT_RE.search(row_text):
+                                    # Clean and format the row
+                                    clean_row = []
+                                    for cell in row[:6]:  # Take first 6 columns
+                                        clean_row.append(str(cell).strip() if cell else "")
+                                    rows.append(clean_row)
+                
+                # Fallback: extract from text if no tables found
+                if not rows:
+                    try:
+                        text = page.extract_text() or ""
+                    except Exception as e:
+                        print(f"Warning: Could not extract text from page in {pdf_path}: {e}", file=sys.stderr)
+                        continue
                     
-                try:
-                    text = page.extract_text() or ""
-                except Exception as e:
-                    print(f"Warning: Could not extract text from page in {pdf_path}: {e}", file=sys.stderr)
-                    continue
-                    
-                for line in text.splitlines():
-                    line = line.strip()
-                    if STOP_RE.search(line):
-                        stop = True
-                        break
-                    m_date = DATE_RE.match(line)
-                    m_amount = AMOUNT_RE.search(line)
-                    if m_date and m_amount:
-                        rows.append((m_date.group(1), m_amount.group(0)))
+                    lines = text.splitlines()
+                    for i, line in enumerate(lines):
+                        line = line.strip()
+                        if STOP_RE.search(line):
+                            break
+                            
+                        # Look for lines that contain dates and amounts
+                        if DATE_RE.search(line) and AMOUNT_RE.search(line):
+                            # Try to parse the transaction line
+                            parts = line.split()
+                            if len(parts) >= 4:
+                                # Extract date (first date found)
+                                date_match = DATE_RE.search(line)
+                                date = date_match.group() if date_match else ""
+                                
+                                # Extract amount (last amount found)
+                                amount_matches = list(AMOUNT_RE.finditer(line))
+                                amount = amount_matches[-1].group() if amount_matches else ""
+                                
+                                # Try to extract other fields
+                                # This is a simplified approach - might need refinement
+                                remaining_text = line
+                                for pattern in [date, amount]:
+                                    if pattern:
+                                        remaining_text = remaining_text.replace(pattern, "", 1)
+                                
+                                # Split remaining text into potential fields
+                                fields = [f.strip() for f in remaining_text.split() if f.strip()]
+                                
+                                # Build row: Date/Valuta, Vorgang, Referenz, Auftraggeber/IBAN, Buchungstext, Amount
+                                row = [
+                                    date,  # Buchungstag/Valuta
+                                    fields[0] if len(fields) > 0 else "",  # Vorgang
+                                    fields[1] if len(fields) > 1 else "",  # Referenz
+                                    " ".join(fields[2:-1]) if len(fields) > 3 else "",  # Auftraggeber/Empfänger,IBAN/BIC
+                                    fields[-1] if len(fields) > 0 and len(fields) > 2 else "",  # Buchungstext
+                                    amount  # Ausgang/Eingang
+                                ]
+                                rows.append(row)
                         
     except PermissionError:
         raise PermissionError(f"Permission denied accessing PDF file: {pdf_path}")
@@ -121,7 +169,7 @@ def collect_files(file: Path | None, folder: Path | None):
 
 def main():
     p = argparse.ArgumentParser(
-        description="Extracts date and amount from bank statement PDFs into a CSV.",
+        description="Extracts full table data from bank statement PDFs into a CSV and optionally outputs markdown.",
         epilog=f"PDF Bank Statement Extractor v{__version__} by {__author__}"
     )
     src = p.add_mutually_exclusive_group(required=True)
@@ -131,6 +179,8 @@ def main():
                    help="Output CSV path, default: auszuege.csv")
     p.add_argument("--add-filename", action="store_true",
                    help="Include filename in output")
+    p.add_argument("--markdown", type=Path, nargs="?", const="-", default=None,
+                   help="Output markdown table to file (or '-' for stdout)")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     args = p.parse_args()
@@ -157,12 +207,17 @@ def main():
             print(f"Error: Cannot create output directory: {output_dir}", file=sys.stderr)
             sys.exit(1)
     
-    out_fields = ["Datum", "Betrag"]
+    # Column headers matching Demo.md structure
+    out_fields = [
+        "Buchungstag/Valuta", "Vorgang", "Referenz", 
+        "Auftraggeber/Empfänger,IBAN/BIC", "Buchungstext", "Ausgang/Eingang"
+    ]
     if args.add_filename:
         out_fields.append("Datei")
 
     failed_files = []
     total = 0
+    all_rows = []
     
     try:
         with args.out.open("w", newline="", encoding="utf-8") as fh:
@@ -176,11 +231,17 @@ def main():
                         print(f"Warning: No transactions found in {pdf}", file=sys.stderr)
                         continue
                         
-                    for d, a in rows:
+                    for row in rows:
+                        # Ensure we have 6 columns
+                        while len(row) < 6:
+                            row.append("")
+                        
+                        out_row = row[:6]  # Take first 6 columns
                         if args.add_filename:
-                            writer.writerow([d, a, str(pdf)])
-                        else:
-                            writer.writerow([d, a])
+                            out_row.append(str(pdf))
+                        
+                        writer.writerow(out_row)
+                        all_rows.append(out_row)
                         total += 1
                         
                 except Exception as e:
@@ -194,6 +255,29 @@ def main():
     except Exception as e:
         print(f"Error writing output file: {e}", file=sys.stderr)
         sys.exit(1)
+
+    # Generate markdown output if requested
+    if args.markdown is not None:
+        md_fields = out_fields
+        md = io.StringIO()
+        md.write("| " + " | ".join(md_fields) + " |\n")
+        md.write("| " + " | ".join(["---"] * len(md_fields)) + " |\n")
+        for row in all_rows:
+            # Escape pipe characters in cells
+            escaped_row = [str(cell).replace("|", "\\|") for cell in row]
+            md.write("| " + " | ".join(escaped_row) + " |\n")
+        
+        md_content = md.getvalue()
+        
+        if args.markdown == Path("-") or str(args.markdown) == "-":
+            print("\n" + md_content)
+        else:
+            try:
+                with args.markdown.open("w", encoding="utf-8") as mdfile:
+                    mdfile.write(md_content)
+                print(f"Markdown table written to: {args.markdown}")
+            except Exception as e:
+                print(f"Error writing markdown file: {e}", file=sys.stderr)
 
     # Summary
     successful_files = len(files) - len(failed_files)
